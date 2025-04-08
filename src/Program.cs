@@ -43,17 +43,18 @@ switch (command)
             for (int i = 0; i < bytes.Length; i++)
             {
                 char letter = ((char)bytes[i]);
-                if (letter == char.MinValue)
-                    findNull = true;
-
+                    
                 if (findNull)
                     chars.Add(letter);
+                    
+                if (letter == char.MinValue)
+                    findNull = true;
             }
 
             if (chars.Count != 0)
             {
                 string content = new([.. chars]);
-                Console.WriteLine(content);
+                Console.Write(content);
             }
         }
         break;
