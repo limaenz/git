@@ -87,5 +87,71 @@ switch (command)
         }
         break;
 
+    case "ls-tree":
+        {
+            if (args[1] != "--name-only" && args[2] is null)
+                return;
+
+            var objects = args[2];
+            string path = $".git/objects/{objects[..2]}/{objects.Substring(2, 38)}";
+
+            using FileStream compressedFileStream = File.OpenRead(path);
+            using var ds = new ZLibStream(compressedFileStream, CompressionMode.Decompress);
+            using var sr = new StreamReader(ds);
+
+            var decompressedObject = sr.ReadToEnd();
+
+            byte[] bytes = Encoding.ASCII.GetBytes(decompressedObject);
+            var names = new List<string>();
+            bool findNull = false;
+
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                if (findNull)
+                {
+                    var result = GetFileNamesTree(bytes, i);
+                    names = result;
+                    break;
+                }
+
+                if (bytes[i] is 0)
+                    findNull = true;
+            }
+
+            foreach (var item in names)
+                Console.WriteLine(item);
+        }
+        break;
+
     default: throw new ArgumentException($"Unknown command {command}");
+}
+
+List<string> GetFileNamesTree(byte[] bytes, int current)
+{
+    bool isTree = false;
+    List<char> chars = [];
+    List<string> names = [];
+
+    for (int i = current; i < bytes.Length; i++)
+    {
+        char letter = ((char)bytes[i]);
+
+        if (bytes[i] is 0 && isTree)
+        {
+            if (i + 20 < bytes.Length)
+                i += 20;
+
+            isTree = false;
+            names.Add(new([.. chars]));
+            chars = [];
+        }
+
+        if (isTree)
+            chars.Add(letter);
+
+        if (bytes[i] == 0x20)
+            isTree = true;
+    }
+
+    return names;
 }
