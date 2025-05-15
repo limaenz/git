@@ -134,7 +134,7 @@ List<string> GetFileNamesTree(byte[] bytes, int current)
 
     for (int i = current; i < bytes.Length; i++)
     {
-        char letter = ((char)bytes[i]);
+        char letter = ((char)bytes[i]); 
 
         if (bytes[i] is 0 && isTree)
         {
