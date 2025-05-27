@@ -123,6 +123,15 @@ switch (command)
         }
         break;
 
+    case "write-tree":
+        {
+            var currentDirectory = Directory.GetCurrentDirectory();
+
+            GetTreeObject(currentDirectory);
+
+        }
+        break;
+
     default: throw new ArgumentException($"Unknown command {command}");
 }
 
@@ -154,4 +163,136 @@ List<string> GetFileNamesTree(byte[] bytes, int current)
     }
 
     return names;
+}
+
+string GetBlobObject(string file)
+{
+    using FileStream fileStream = File.OpenRead($"{file}");
+    using var sr = new StreamReader(fileStream);
+
+    var contentFile = sr.ReadToEnd();
+
+    string content = $"blob {contentFile.Length}{char.MinValue}{contentFile}";
+    byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+    var hash = Convert.ToHexStringLower(SHA1.HashData(bytes));
+
+    string path = $".git/objects/{hash[..2]}/{hash.Substring(2, 38)}";
+
+    Directory.CreateDirectory($".git/objects/{hash[..2]}");
+
+    using FileStream compressedFileStream = File.OpenWrite(path);
+    using var ds = new ZLibStream(compressedFileStream, CompressionMode.Compress);
+    using var sw = new StreamWriter(ds);
+
+    return hash;
+}
+
+void GetTreeObject(string currentDirectory)
+{
+    int contentSize = 0;
+    var directories = Directory.GetDirectories(currentDirectory);
+    var currentFiles = Directory.GetFiles(currentDirectory);
+    var objects = new List<(string hash, string path)>();
+
+    foreach (var directory in directories)
+    {
+        if (directory.Contains('.'))
+            continue;
+
+        string path = $"{directory}";
+        var currentDirectories = Directory.GetDirectories(path);
+
+        if (currentDirectories.Length != 0)
+            GetTreeObject(path);
+
+        var files = Directory.GetFiles(path);
+
+        var blobs = new List<string>();
+        int sizeTree = 0;
+
+        foreach (var file in files)
+        {
+            string blobHash = GetBlobObject(file);
+            byte[] blobBytes = Convert.FromHexString(blobHash);
+
+            var sb = new StringBuilder(blobBytes.Length);
+            foreach (var item in blobBytes)
+                sb.Append(item);
+
+            blobs.Add($"{GetModeBlobObject(file)} {Path.GetFileName(file)}{char.MinValue}{sb}");
+            sizeTree += file.Length;
+            contentSize += file.Length;
+        }
+
+        var content = new StringBuilder($"tree {sizeTree}{char.MinValue}");
+        blobs.ForEach(s => content.Append(s));
+
+        byte[] contentBytes = Encoding.ASCII.GetBytes(content.ToString());
+        var hashData = Convert.ToHexStringLower(SHA1.HashData(contentBytes));
+        string pathHash = $".git/objects/{hashData[..2]}/{hashData.Substring(2, 38)}";
+        Console.WriteLine(pathHash);
+
+        objects.Add((hashData, directory));
+
+        if (File.Exists(pathHash))
+            continue;
+
+        Directory.CreateDirectory($".git/objects/{hashData[..2]}");
+
+        using FileStream compressedFileStreamTree = File.OpenWrite(pathHash);
+        using var libStream = new ZLibStream(compressedFileStreamTree, CompressionMode.Compress);
+        using var streamWriter = new StreamWriter(libStream);
+    }
+
+    var currentBlobs = new List<string>();
+
+    foreach (var file in currentFiles)
+    {
+        string blobHash = GetBlobObject(file);
+        byte[] hashBytes = Convert.FromHexString(blobHash);
+
+        var sb = new StringBuilder(hashBytes.Length);
+        foreach (var item in hashBytes)
+            sb.Append(item);
+
+        currentBlobs.Add($"{GetModeBlobObject(file)} {Path.GetFileName(file)}{char.MinValue}{sb}");
+    }
+
+    var currentContent = new StringBuilder($"tree {contentSize}{char.MinValue}");
+    objects.ForEach(ob =>
+    {
+        currentContent.Append($"{GetModeBlobObject(ob.path)} {Path.GetFileName(ob.path)}{char.MinValue}{ob.hash}");
+    });
+    currentBlobs.ForEach(s => currentContent.Append(s));
+
+    byte[] bytes = Encoding.ASCII.GetBytes(currentContent.ToString());
+    var hash = Convert.ToHexStringLower(SHA1.HashData(bytes));
+
+    string pathNewObject = $".git/objects/{hash[..2]}/{hash.Substring(2, 38)}";
+        Console.WriteLine(pathNewObject);
+
+    if (File.Exists(pathNewObject))
+        return;
+
+    var teste = Directory.CreateDirectory($".git/objects/{hash[..2]}");
+
+    using FileStream compressedFileStream = File.OpenWrite(pathNewObject);
+    using var ds = new ZLibStream(compressedFileStream, CompressionMode.Compress);
+    using var sw = new StreamWriter(ds);
+}
+
+string GetModeBlobObject(string path)
+{
+    if (Directory.Exists(path))
+        return "40000";
+
+    var fileInfo = new FileInfo(path);
+    if (fileInfo.LinkTarget != null)
+        return "120000";
+
+    if ((File.GetUnixFileMode(path) & UnixFileMode.UserExecute) != 0)
+        return "100755";
+    else
+        return "100644";
 }
