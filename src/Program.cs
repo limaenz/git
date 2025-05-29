@@ -128,7 +128,27 @@ switch (command)
             var currentDirectory = Directory.GetCurrentDirectory();
 
             GetTreeObject(currentDirectory);
+        }
+        break;
 
+    case "commit-tree":
+        {
+            if (string.IsNullOrWhiteSpace(args[1]) || args[2] != "-p"
+            || string.IsNullOrWhiteSpace(args[3])
+            || args[4] != "-m"
+            || string.IsNullOrWhiteSpace(args[5]))
+                return;
+
+            string tree = args[1];
+            string parent = args[3];
+            string message = args[5];
+
+            //$ ./your_program.sh commit-tree <tree_sha> -p <commit_sha> -m <message>
+
+            //# Create a new commit with the new tree SHA
+            // $ git commit-tree 5b825dc642cb6eb9a060e54bf8d69288fbee4904 -p 3b18e512dba79e4c8300dd08aeb37f8e728b8dad -m "Second commit"
+
+            Commit(tree, parent, message);
         }
         break;
 
@@ -231,7 +251,6 @@ void GetTreeObject(string currentDirectory)
         byte[] contentBytes = Encoding.ASCII.GetBytes(content.ToString());
         var hashData = Convert.ToHexStringLower(SHA1.HashData(contentBytes));
         string pathHash = $".git/objects/{hashData[..2]}/{hashData.Substring(2, 38)}";
-        Console.WriteLine(pathHash);
 
         objects.Add((hashData, directory));
 
@@ -270,12 +289,9 @@ void GetTreeObject(string currentDirectory)
     var hash = Convert.ToHexStringLower(SHA1.HashData(bytes));
 
     string pathNewObject = $".git/objects/{hash[..2]}/{hash.Substring(2, 38)}";
-        Console.WriteLine(pathNewObject);
 
     if (File.Exists(pathNewObject))
         return;
-
-    var teste = Directory.CreateDirectory($".git/objects/{hash[..2]}");
 
     using FileStream compressedFileStream = File.OpenWrite(pathNewObject);
     using var ds = new ZLibStream(compressedFileStream, CompressionMode.Compress);
@@ -295,4 +311,32 @@ string GetModeBlobObject(string path)
         return "100755";
     else
         return "100644";
+}
+
+void Commit(string tree, string parent, string message)
+{
+
+    var authorTime = DateTimeOffset.Now;
+    var content = new StringBuilder($"tree {tree}");
+    content.AppendLine();
+    content.Append($"parent {parent}");
+    content.AppendLine();
+    content.Append($"author Enzo Lima <enzoliuumafranca@gmail.com> {authorTime.ToUnixTimeSeconds()} {authorTime.ToString("zzz").Replace(":", "")}");
+    content.AppendLine();
+    content.Append($"committer Enzo Lima <enzoliuumafranca@gmail.com> {authorTime.ToUnixTimeSeconds()} {authorTime.ToString("zzz").Replace(":", "")}");
+    content.AppendLine();
+    content.AppendLine();
+    content.Append(message);
+
+    byte[] bytes = Encoding.ASCII.GetBytes(content.ToString());
+
+    var hash = Convert.ToHexStringLower(SHA1.HashData(bytes));
+
+    string path = $".git/objects/{hash[..2]}/{hash.Substring(2, 38)}";
+
+    Directory.CreateDirectory($".git/objects/{hash[..2]}");
+
+    using FileStream compressedFileStream = File.OpenWrite(path);
+    using var ds = new ZLibStream(compressedFileStream, CompressionMode.Compress);
+    using var sw = new StreamWriter(ds);
 }
